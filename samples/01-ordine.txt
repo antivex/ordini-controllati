@@ -1,0 +1,10 @@
+Oggetto: Ordine di prova OR-101
+
+Buongiorno, ecco il nostro ordine sintetico.
+Ordine: OR-101
+Data: 2026-10-12
+Azienda: Nuvoria Demo
+Prodotto: Tassello nebbia
+Quantità: 8
+Prezzo unitario EUR: 4,25
+Totale EUR: 34,00

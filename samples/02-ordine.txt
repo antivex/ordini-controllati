@@ -1,0 +1,7 @@
+Ordine: OR-102
+Azienda: Piegafoglia Demo
+Data: 13/10/2026
+Prodotto: Anello marea
+Quantità: 3
+Prezzo unitario EUR: 11,20
+Totale EUR: 33,60

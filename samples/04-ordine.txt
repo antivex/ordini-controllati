@@ -1,0 +1,9 @@
+Oggetto: Fornitura dimostrativa
+
+Ordine: OR-104
+Data: 2026-10-15
+Azienda: Nuvoria Demo
+Prodotto: Cilindro riva
+Quantità: 4
+Prezzo unitario EUR: 19.90
+Totale EUR: 79.60

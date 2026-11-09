@@ -1,0 +1,12 @@
+Oggetto: Conferma con due valori diversi
+
+Ordine: OR-106
+Data: 17/10/2026
+Azienda: Piegafoglia Demo
+Prodotto: Rondella equinozio
+Quantità: 6
+Prezzo unitario EUR: 5,00
+Totale EUR: 30,00
+
+Aggiornamento da verificare:
+Totale EUR: 33,00
