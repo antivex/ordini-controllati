@@ -1,0 +1,10 @@
+fornitore;ordine;data;riga;sku;descrizione;quantita;prezzo_unitario;importo_riga;valuta
+Ramofuso Demo;RF-101;2026-10-12;1;RA-21;Tassello bruma;8;4.25;34.00;EUR
+Ramofuso Demo;RF-101;2026-10-12;2;RA-48;Guida marea;3;6.00;18.00;EUR
+Ramofuso Demo;RF-102;2026-10-13;1;RA-77;Perno ambra;1;18.00;18.00;EUR
+Ramofuso Demo;RF-102;2026-10-13;2;RA-21;Tassello bruma;4;4.25;17.00;EUR
+Ramofuso Demo;RF-102;2026-10-13;3;RA-48;Guida marea;2;6.00;12.00;EUR
+Officina Velombra Demo;VO-201;2026-10-14;1;VE-11;Distanziale vela;2;9.50;19.00;EUR
+Officina Velombra Demo;VO-201;2026-10-14;2;VE-83;Clip di sponda;5;2.10;10.50;EUR
+Cartaonda Demo;CO-301;2026-10-16;1;CO-41;Tasselli bruma;8;4.25;34.00;EUR
+Cartaonda Demo;CO-301;2026-10-16;2;CO-52;Staffe onda;2;7.50;15.00;EUR

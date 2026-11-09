@@ -1,45 +1,53 @@
-# Dagli ordini a Excel · Orders to Excel
+# Dagli ordini al gestionale · Orders to ERP
 
-Sei ordini inventati entrano come testo di email salvato in UTF-8 o come PDF con testo selezionabile. Lo script produce un Excel con una riga per documento. Il foglio **Da controllare** raccoglie i documenti dubbi e il motivo.
+**Prima:** qualcuno ricopia articoli e prezzi da PDF ed email. **Dopo:** questa demo prepara un CSV con le righe riconciliate e un Excel che spiega quali ordini devono passare da una persona.
+**Before:** someone rekeys items and prices from PDFs and email. **After:** this demo produces a CSV of reconciled line items and an Excel workbook explaining which orders need human review.
 
-Six fictional orders arrive as saved email text or text-based PDFs. The script writes one row per document to Excel. The **Da controllare** (Needs review) sheet lists the exceptions and explains each one.
+![Prima e dopo: due righe in un PDF e le stesse due righe nel CSV; un ordine con importi discordanti resta in revisione](docs/prima-dopo.png)
 
-![Prima e dopo / Before and after: un PDF senza quantità e la corrispondente segnalazione in Excel](docs/prima-dopo.png)
-
-[Apri l’Excel di esempio / Open the sample workbook](docs/ordini-esempio.xlsx)
+[Excel di esempio / Sample workbook](docs/ordini-esempio.xlsx) · [CSV di esempio / Sample import](docs/ordini-esempio.csv)
 
 ## Esecuzione · Run
 
-Con [uv](https://docs.astral.sh/uv/) installato, dalla cartella del progetto eseguire il comando qui sotto. From the project folder, run the command below with uv installed. The first run may download Python dependencies. Document processing runs locally.
+Dalla cartella del progetto / From the project folder:
 
 ```sh
 uv run demo.py
 ```
 
-Con Python 3.10+ già disponibile / With an existing Python 3.10+ environment:
+[uv](https://docs.astral.sh/uv/) installa le dipendenze al primo avvio. L’elaborazione è locale. / uv may download Python dependencies on the first run. All document processing is local.
+
+Con Python 3.10+ già installato / Alternatively, with Python 3.10+:
 
 ```sh
 python -m pip install -r requirements.txt
 python demo.py
+python -m unittest -v
 ```
 
-Aprire **output/ordini.xlsx**. I sei esempi in **samples/** danno quattro righe con controlli superati e due da rivedere. Nel PDF OR-105 manca la quantità. Nel testo OR-106 compaiono due totali diversi. Le celle incerte restano vuote. Se un totale dichiarato è univoco ma non torna con quantità × prezzo, il foglio conserva il valore originale e segnala la differenza.
+## Cosa si può verificare · What to check
 
-Open **output/ordini.xlsx**. Four samples pass the checks. OR-105 has no quantity and OR-106 contains conflicting totals. Uncertain fields stay blank. When a single stated total disagrees with quantity × unit price, the workbook preserves the stated amount and flags the discrepancy.
+| Fornitore inventato / Fictional supplier | Formato / Format | Prova / Example |
+|---|---|---|
+| Ramofuso Demo | PDF tabellare con codice, descrizione, pezzi, prezzo e importo / multirow PDF table | RF-101: 34,00 + 18,00 = 52,00 EUR. Entrambe le righe nel CSV / both lines exported. |
+| Officina Velombra Demo | PDF con un’intestazione e due righe di testo per articolo / PDF header and repeated item blocks | VO-202: le righe danno 29,50 EUR, il documento dichiara 27,50. L’intero ordine resta in revisione / whole order held. |
+| Cartaonda Demo | Email in prosa, letta dal corpo MIME e abbinata al catalogo del fornitore / prose email matched to the supplier’s catalog | CO-302: il secondo prezzo è «da confermare». Anche la prima riga resta fuori dal CSV / both items withheld. |
 
-## Formato e limiti · Input and scope
+Sei documenti, quattro ordini riconciliati, nove righe esportate per **177,50 EUR**. Gli altri due documenti rimangono in **Da controllare**. Il foglio **Ordini** riporta una riga per documento; **Righe** mostra gli articoli leggibili, compresi quelli trattenuti. Per una lettura parziale, «Somma righe EUR» rappresenta solo le righe lette.
 
-Un articolo per ordine. Usare le sette etichette italiane presenti nei campioni, ciascuna su una riga. Sono accettati importi in euro senza separatori delle migliaia e date ISO o GG/MM/AAAA. Lo script verifica anche gli identificativi ripetuti per la stessa azienda. I campi sconosciuti vengono ignorati. Nessun accesso alla posta, OCR, interpretazione di prosa libera, riconciliazione IVA/sconti o invio a un gestionale.
+Six documents, four reconciled orders, nine exported line items totalling **EUR 177.50**. The other two documents appear in **Da controllare** (Needs review). **Ordini** contains one row per document; **Righe** shows readable items, including withheld ones. For a partial read, the line sum only covers readable items.
 
-Use the seven Italian field labels in the samples, one field per line and one product per order. Amounts are in EUR without thousands separators. Dates use ISO or DD/MM/YYYY. Duplicate order IDs for the same company are flagged. Unknown labels are ignored. Image-only PDFs need human review. Inbox access, OCR, free-form language interpretation, tax/discount reconciliation and ERP posting are outside this demo.
+## Importazione e limiti · Import and scope
 
-Percorsi alternativi e test / Custom paths and tests:
+- Il file **output/ordini.csv** usa UTF-8, separatore punto e virgola, date ISO e decimali con il punto. Ogni riga identifica fornitore, ordine, posizione e SKU. È un tracciato dimostrativo da mappare ai campi del gestionale di destinazione. / The CSV uses UTF-8, semicolons, ISO dates and a decimal point. Map its supplier, order, line number, SKU, quantity and amount fields to the target ERP before import.
+- L’ammissione al CSV è automatica **per ordine intero**. Quantità × prezzo, importi di riga dichiarati e totale devono tornare al centesimo. Un identificativo duplicato per lo stesso fornitore, un prezzo dubbio, una voce sconosciuta o un profilo non riconosciuto richiedono revisione. Per correggere, aggiornare il documento sorgente e rieseguire. / Every line of an order is held if any check fails. Correct the source and rerun to regenerate both files.
+- I tre profili riconoscono formati e frasi specifici. Nessun OCR, accesso a caselle email, interpretazione generica di allegati, supporto IVA/sconti o collegamento a un gestionale. Nessuna chiave né servizio AI a runtime. / The readers target three known layouts and a small prose vocabulary. Scans, arbitrary text, tax/discount calculations, inbox retrieval and live ERP posting are outside scope. No runtime AI service or key is needed.
+- I campioni della prima demo rimangono in `samples/legacy/`. La modalità di controllo precedente continua a leggerli; non hanno SKU verificati per il CSV. / Previous single-item samples remain readable for review only.
+- Vengono sostituiti i due file di uscita a ogni esecuzione. Se un'interruzione lascia un file `.export-lock`, rimuoverlo **solo dopo aver verificato che non sia in corso un’esportazione** e rieseguire. / Runs replace both outputs. After an interrupted run, confirm no export is active before removing a stale lock and rerunning.
 
 ```sh
-uv run demo.py --input samples --output output/orders.xlsx
+uv run demo.py --input samples --output output/ordini.xlsx
 uv run --with-requirements requirements.txt python -m unittest -v
 ```
 
-Con le dipendenze già installate basta `python -m unittest -v`. With dependencies installed, run `python -m unittest -v`.
-
-Autore / Author: **antivex**. Realizzato con il supporto dell’AI, su dati interamente sintetici. Built with AI assistance using entirely synthetic data. [MIT License](LICENSE).
+Autore / Author: **antivex**. Costruito con supporto AI esclusivamente su dati sintetici. Built with AI assistance using entirely fictional data. [MIT License](LICENSE).

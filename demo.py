@@ -2,15 +2,17 @@
 # requires-python = ">=3.10"
 # dependencies = ["openpyxl==3.1.5", "pypdf==6.14.2"]
 # ///
-"""Turn labelled, single-item order documents into a local review workbook."""
+"""Review local order documents and export reconciled item rows for ERP import."""
 
 import argparse
+import csv
 import re
 import tempfile
 from collections import defaultdict
-from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -18,17 +20,11 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
+from profiles import Order, parse_profile
 
 
 ROOT = Path(__file__).resolve().parent
 LABELS = ("Ordine", "Data", "Azienda", "Prodotto", "Quantità", "Prezzo unitario EUR", "Totale EUR")
-
-
-@dataclass
-class Order:
-    filename: str
-    values: dict = field(default_factory=dict)
-    reasons: list[str] = field(default_factory=list)
 
 
 def field_value(label, raw):
@@ -56,6 +52,9 @@ def field_value(label, raw):
 
 
 def parse_order(filename, text):
+    profiled = parse_profile(filename, text)
+    if profiled is not None:
+        return profiled
     order = Order(filename)
     if not text.strip():
         order.reasons.append("Testo assente: verificare il documento originale.")
@@ -67,6 +66,9 @@ def parse_order(filename, text):
         label = labels.get(key.strip().casefold())
         if sep and label:
             collected[label].append(value.strip())
+    if not collected:
+        order.reasons.append("Profilo fornitore o formato non riconosciuto.")
+        return order
     for label in LABELS:
         raw = collected[label]
         if not raw or not all(raw):
@@ -90,22 +92,28 @@ def read_order(path):
             reader = PdfReader(path)
             if reader.is_encrypted:
                 return Order(path.name, reasons=["PDF protetto: revisione manuale."])
-            pages = [page.extract_text() or "" for page in reader.pages]
+            pages = [page.extract_text(extraction_mode="layout") or "" for page in reader.pages]
             order = parse_order(path.name, "\n".join(pages))
             if any(not page.strip() for page in pages) and any(page.strip() for page in pages):
                 order.reasons.append("Almeno una pagina è priva di testo estraibile.")
             return order
+        if path.suffix.lower() == ".eml":
+            message = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+            bodies = [part for part in message.walk() if part.get_content_type() == "text/plain" and not part.is_attachment()]
+            if len(bodies) != 1 or any(message.iter_attachments()):
+                return Order(path.name, reasons=["Email senza corpo testuale univoco o con allegati da verificare."])
+            return parse_order(path.name, bodies[0].get_content())
         return parse_order(path.name, path.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeError, PyPdfError, ValueError, KeyError):
+    except (OSError, UnicodeError, PyPdfError, ValueError, LookupError):
         return Order(path.name, reasons=["Documento illeggibile o danneggiato."])
 
 
 def load_orders(folder):
     if not folder.is_dir():
         raise ValueError("La cartella di ingresso non esiste.")
-    paths = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in {".txt", ".pdf"})
+    paths = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in {".txt", ".pdf", ".eml"})
     if not paths:
-        raise ValueError("La cartella non contiene documenti TXT o PDF.")
+        raise ValueError("La cartella non contiene documenti TXT, EML o PDF.")
     orders = [read_order(path) for path in paths]
     by_id = defaultdict(list)
     for order in orders:
@@ -147,22 +155,40 @@ def write_workbook(orders, output):
     book.properties.creator = book.properties.lastModifiedBy = "antivex"
     main = book.active
     main.title = "Ordini"
+    details = book.create_sheet("Righe")
     review = book.create_sheet("Da controllare")
-    main.append(["Documento", *LABELS, "Esito"])
+    main.append(["Documento", "Ordine", "Data", "Azienda", "Righe lette", "Somma righe EUR", "Totale dichiarato EUR", "Esito", "Righe nel CSV"])
+    details.append(["Documento", "Ordine", "Codice", "Descrizione", "Quantità", "Prezzo EUR", "Riga dichiarata EUR", "Riga calcolata EUR", "Importazione"])
     review.append(["Documento", "Ordine", "Motivo"])
     for order in orders:
         status = "Da controllare" if order.reasons else "Controlli superati"
-        append_values(main, [order.filename, *(order.values.get(key) for key in LABELS), status])
-        for column in ("G", "H"):
+        v = order.values
+        number = v.get("Ordine")
+        calculated = sum(i.net for i in order.items) if order.items else None
+        count = len(order.items)
+        disposition = "Inclusa" if order.can_export else "Trattenuta"
+        for item in order.items:
+            append_values(details, [order.filename, number, item.sku, item.product, item.quantity, item.price, item.stated_net, item.net, disposition])
+        if not order.items and v.get("Prodotto") is not None:
+            count = 1
+            if v.get("Quantità") is not None and v.get("Prezzo unitario EUR") is not None:
+                calculated = v["Quantità"] * v["Prezzo unitario EUR"]
+            append_values(details, [order.filename, number, None, v["Prodotto"], v.get("Quantità"), v.get("Prezzo unitario EUR"), None, calculated, "Archivio v1"])
+        append_values(main, [order.filename, number, v.get("Data"), v.get("Azienda"), count, calculated, v.get("Totale EUR"), status, count if order.can_export else 0])
+        for column in ("F", "G"):
             main[f"{column}{main.max_row}"].number_format = '#,##0.00 "€"'
         if order.reasons:
-            main[f"I{main.max_row}"].fill = PatternFill("solid", fgColor="FBE6C1")
+            main[f"H{main.max_row}"].fill = PatternFill("solid", fgColor="FBE6C1")
             reason = "\n".join(order.reasons)
             append_values(review, [order.filename, order.values.get("Ordine"), reason])
             review[f"C{review.max_row}"].alignment = Alignment(wrap_text=True, vertical="top")
             review.row_dimensions[review.max_row].height = 18 * len(order.reasons) + 8
-    format_sheet(main, [28, 17, 15, 25, 25, 13, 22, 18, 22])
-    format_sheet(review, [28, 17, 70])
+    for row in details.iter_rows(min_row=2, min_col=6, max_col=8):
+        for cell in row:
+            cell.number_format = '#,##0.00 "€"'
+    format_sheet(main, [29, 17, 16, 26, 15, 22, 25, 23, 17])
+    format_sheet(details, [29, 17, 14, 25, 15, 18, 24, 23, 18])
+    format_sheet(review, [29, 17, 94])
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=output.parent, suffix=".xlsx", delete=False) as temp:
         pending = Path(temp.name)
@@ -174,6 +200,42 @@ def write_workbook(orders, output):
         book.close()
 
 
+CSV_HEADER = ["fornitore", "ordine", "data", "riga", "sku", "descrizione", "quantita", "prezzo_unitario", "importo_riga", "valuta"]
+
+
+def write_outputs(orders, output):
+    """Stage both files together; an earlier CSV must never describe a newer workbook."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    target_csv = output.with_suffix(".csv")
+    lock = output.with_suffix(".export-lock")
+    with lock.open("x") as owner:
+        owner.write("Esportazione in corso")
+    try:
+        with tempfile.TemporaryDirectory(dir=output.parent) as directory:
+            stage = Path(directory)
+            staged_book, staged_csv = stage / "new.xlsx", stage / "new.csv"
+            write_workbook(orders, staged_book)
+            with staged_csv.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.writer(stream, delimiter=";")
+                writer.writerow(CSV_HEADER)
+                for order in orders:
+                    if order.can_export:
+                        for pos, item in enumerate(order.items, 1):
+                            writer.writerow([order.values["Azienda"], order.values["Ordine"], order.values["Data"].isoformat(), pos, item.sku, item.product, item.quantity, f"{item.price:.2f}", f"{item.net:.2f}", "EUR"])
+            backup_csv = stage / "old.csv"
+            if target_csv.exists():
+                target_csv.replace(backup_csv)
+            try:
+                staged_book.replace(output)
+            except OSError:
+                if backup_csv.exists():
+                    backup_csv.replace(target_csv)
+                raise
+            staged_csv.replace(target_csv)
+    finally:
+        lock.unlink()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=ROOT / "samples")
@@ -183,10 +245,11 @@ def main():
         parser.error("L'uscita deve avere estensione .xlsx")
     try:
         orders = load_orders(args.input)
-        write_workbook(orders, args.output)
+        write_outputs(orders, args.output)
     except (ValueError, OSError) as error:
         parser.exit(1, f"Errore: {error}\n")
-    print(f"{len(orders)} documenti | {sum(bool(o.reasons) for o in orders)} da controllare | {args.output.name}")
+    count = sum(len(o.items) for o in orders if o.can_export)
+    print(f"{len(orders)} documenti | {sum(bool(o.reasons) for o in orders)} da controllare | {count} righe CSV | {args.output.name}, {args.output.with_suffix('.csv').name}")
 
 
 if __name__ == "__main__":
