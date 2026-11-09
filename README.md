@@ -50,4 +50,6 @@ uv run demo.py --input samples --output output/ordini.xlsx
 uv run --with-requirements requirements.txt python -m unittest -v
 ```
 
+Altri lavori / More work: [portfolio antivex](https://antivex.github.io/portfolio/)
+
 Autore / Author: **antivex**. Costruito con supporto AI esclusivamente su dati sintetici. Built with AI assistance using entirely fictional data. [MIT License](LICENSE).
